@@ -32,8 +32,8 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
         "--mode",
         type=str,
         default="auto",
-        choices=["auto", "center"],
-        help="トリミングモード: auto=余白自動カット, center=アスペクト比でセンタークロップ"
+        choices=["auto", "center", "rect"],
+        help="トリミングモード: auto=余白自動カット, center=アスペクト比でセンタークロップ, rect=指定矩形で切り出し"
     )
 
     parser.add_argument(
@@ -61,6 +61,12 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
         default=None,
         help="center時: アスペクト比（例: 1:1, 16:9, 4:3）"
     )
+
+    # rect モード用の矩形指定
+    parser.add_argument("--x", type=int, default=None, help="rect時: 左上X（px）")
+    parser.add_argument("--y", type=int, default=None, help="rect時: 左上Y（px）")
+    parser.add_argument("--width", type=int, default=None, help="rect時: 幅（px, >0）")
+    parser.add_argument("--height", type=int, default=None, help="rect時: 高さ（px, >0）")
 
     parser.add_argument(
         "--ext",
@@ -171,6 +177,21 @@ def center_crop_to_aspect(img: np.ndarray, aspect: Tuple[int, int]) -> np.ndarra
     return img
 
 
+def crop_by_rect(img: np.ndarray, x: int, y: int, w: int, h: int) -> np.ndarray:
+    if w is None or h is None or x is None or y is None:
+        raise ValueError("rect モードには --x, --y, --width, --height の全指定が必要です")
+    if w <= 0 or h <= 0:
+        raise ValueError("--width と --height は正の整数で指定してください")
+    img_h, img_w = img.shape[:2]
+    x0 = max(0, min(x, img_w))
+    y0 = max(0, min(y, img_h))
+    x1 = max(x0, min(x0 + w, img_w))
+    y1 = max(y0, min(y0 + h, img_h))
+    if x1 <= x0 or y1 <= y0:
+        raise ValueError("指定矩形が画像範囲外です")
+    return img[y0:y1, x0:x1]
+
+
 def parse_aspect(aspect_str: Optional[str]) -> Optional[Tuple[int, int]]:
     if not aspect_str:
         return None
@@ -237,7 +258,8 @@ def process_one(
     bg_threshold: int,
     alpha_threshold: int,
     pad: int,
-    aspect: Optional[Tuple[int, int]]
+    aspect: Optional[Tuple[int, int]],
+    rect_params: Optional[Tuple[Optional[int], Optional[int], Optional[int], Optional[int]]] = None,
 ) -> np.ndarray:
     img = read_image_with_alpha(src_path)
     if mode == "auto":
@@ -246,6 +268,11 @@ def process_one(
         if not aspect:
             raise ValueError("center モードには --aspect の指定が必要です")
         return center_crop_to_aspect(img, aspect)
+    if mode == "rect":
+        if rect_params is None:
+            raise ValueError("rect モードの指定が不足しています")
+        x, y, w, h = rect_params
+        return crop_by_rect(img, int(x), int(y), int(w), int(h))
     raise ValueError(f"未知のモード: {mode}")
 
 
@@ -276,6 +303,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
                 alpha_threshold=args.alpha_threshold,
                 pad=args.pad,
                 aspect=aspect,
+                rect_params=(args.x, args.y, args.width, args.height) if args.mode == "rect" else None,
             )
             dst = build_output_path(out_dir, src, base_dir, forced_ext)
             # 保存

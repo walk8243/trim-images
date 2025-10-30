@@ -42,6 +42,13 @@ uv run python main.py <入力パス> -o <出力ディレクトリ> [オプショ
 - `--mode center`: 指定アスペクト比でセンタークロップします。
   - `--aspect <W:H|数値>`: 例 `1:1`, `16:9`, `4:3`。数値（例 `1.777`）も可。
 
+- `--mode rect`: 指定した矩形領域で切り出します。
+  - `--x <int>`: 左上X（px）
+  - `--y <int>`: 左上Y（px）
+  - `--width <int>`: 幅（px, >0）
+  - `--height <int>`: 高さ（px, >0）
+  - 画像外にかかる場合は自動的に画像範囲へクランプされます。
+
 ### 入出力
 
 - 入力は単一ファイルまたはディレクトリを指定可能。
@@ -73,6 +80,12 @@ uv run trim-images poster.jpg -o out --mode center --aspect 16:9
 
 ```bash
 uv run trim-images ./images -o ./out --recursive --ext .png
+```
+
+指定位置・サイズでのトリミング（左上 100,50 / 幅 640 / 高さ 360）:
+
+```bash
+uv run trim-images input.png -o out --mode rect --x 100 --y 50 --width 640 --height 360
 ```
 
 ## 注意
