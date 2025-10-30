@@ -51,6 +51,10 @@ uv run python main.py <入力パス> -o <出力ディレクトリ> [オプショ
   - `--height <int>`: 高さ（px, >0）
   - 画像外にかかる場合は自動的に画像範囲へクランプされます。
 
+- `--mode split`: 画像をちょうど半分に分割します（2ファイル出力）。
+  - `--split-axis <h|v|horizontal|vertical>`: 分割方向。`h|horizontal` は上下に半分、`v|vertical` は左右に半分（既定: `v`）。
+  - 出力ファイル名は元名に `_1`, `_2` のサフィックスが付与されます。
+
 ### 入出力
 
 - 入力は単一ファイルまたはディレクトリを指定可能。
@@ -76,6 +80,18 @@ uv run trim-images ./images -o ./out --recursive --alpha-threshold 1 --pad 8
 
 ```bash
 uv run trim-images poster.jpg -o out --mode center --aspect 16:9
+```
+
+画像を左右に半分（垂直分割）:
+
+```bash
+uv run trim-images input.png -o out --mode split --split-axis v
+```
+
+画像を上下に半分（水平分割）:
+
+```bash
+uv run trim-images input.png -o out --mode split --split-axis h
 ```
 
 出力拡張子を .png に統一:

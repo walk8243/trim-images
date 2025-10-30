@@ -32,8 +32,8 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
         "--mode",
         type=str,
         default="auto",
-        choices=["auto", "center", "rect"],
-        help="トリミングモード: auto=余白自動カット, center=アスペクト比でセンタークロップ, rect=指定矩形で切り出し"
+        choices=["auto", "center", "rect", "split"],
+        help="トリミングモード: auto=余白自動カット, center=アスペクト比でセンタークロップ, rect=指定矩形で切り出し, split=画像を半分に分割"
     )
 
     parser.add_argument(
@@ -60,6 +60,15 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
         type=str,
         default=None,
         help="center時: アスペクト比（例: 1:1, 16:9, 4:3）"
+    )
+
+    # split モード用の分割方向
+    parser.add_argument(
+        "--split-axis",
+        type=str,
+        default="v",
+        choices=["h", "v", "horizontal", "vertical"],
+        help="split時: 分割方向 (h|horizontal=上下に半分, v|vertical=左右に半分)"
     )
 
     # rect モード用の矩形指定
@@ -192,6 +201,31 @@ def crop_by_rect(img: np.ndarray, x: int, y: int, w: int, h: int) -> np.ndarray:
     return img[y0:y1, x0:x1]
 
 
+def split_image_in_half(img: np.ndarray, axis: str) -> Tuple[np.ndarray, np.ndarray]:
+    # axis: 'h' => 水平方向に分割（上下に分かれる）
+    #       'v' => 垂直方向に分割（左右に分かれる）
+    h, w = img.shape[:2]
+    if axis in ("horizontal", "h"):
+        # 片側が不足する場合はBORDER_REPLICATEでパディングし、両方同じサイズ（ceil(h/2)）にする
+        target_h = (h + 1) // 2  # ceil(h/2)
+        top = img[0:target_h, :]
+        bottom = img[target_h:h, :]
+        need = target_h - bottom.shape[0]
+        if need > 0:
+            bottom = cv2.copyMakeBorder(bottom, 0, need, 0, 0, cv2.BORDER_REPLICATE)
+        return top, bottom
+    elif axis in ("vertical", "v"):
+        target_w = (w + 1) // 2  # ceil(w/2)
+        left = img[:, 0:target_w]
+        right = img[:, target_w:w]
+        need = target_w - right.shape[1]
+        if need > 0:
+            right = cv2.copyMakeBorder(right, 0, 0, 0, need, cv2.BORDER_REPLICATE)
+        return left, right
+    else:
+        raise ValueError("axis は 'h'|'horizontal' または 'v'|'vertical' を指定してください")
+
+
 def parse_aspect(aspect_str: Optional[str]) -> Optional[Tuple[int, int]]:
     if not aspect_str:
         return None
@@ -296,20 +330,32 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     base_dir = input_path if input_path.is_dir() else input_path.parent
     for src in images:
         try:
-            result = process_one(
-                src,
-                mode=args.mode,
-                bg_threshold=args.bg_threshold,
-                alpha_threshold=args.alpha_threshold,
-                pad=args.pad,
-                aspect=aspect,
-                rect_params=(args.x, args.y, args.width, args.height) if args.mode == "rect" else None,
-            )
-            dst = build_output_path(out_dir, src, base_dir, forced_ext)
-            # 保存
-            save_image(dst, result, overwrite=args.overwrite)
-            print(f"OK: {src} -> {dst}")
-            num_ok += 1
+            if args.mode == "split":
+                img = read_image_with_alpha(src)
+                part1, part2 = split_image_in_half(img, args.split_axis)
+                base_dst = build_output_path(out_dir, src, base_dir, forced_ext)
+                # _1, _2 のサフィックスを付与
+                dst1 = base_dst.with_name(base_dst.stem + "_1" + base_dst.suffix)
+                dst2 = base_dst.with_name(base_dst.stem + "_2" + base_dst.suffix)
+                save_image(dst1, part1, overwrite=args.overwrite)
+                save_image(dst2, part2, overwrite=args.overwrite)
+                print(f"OK: {src} -> {dst1}, {dst2}")
+                num_ok += 1
+            else:
+                result = process_one(
+                    src,
+                    mode=args.mode,
+                    bg_threshold=args.bg_threshold,
+                    alpha_threshold=args.alpha_threshold,
+                    pad=args.pad,
+                    aspect=aspect,
+                    rect_params=(args.x, args.y, args.width, args.height) if args.mode == "rect" else None,
+                )
+                dst = build_output_path(out_dir, src, base_dir, forced_ext)
+                # 保存
+                save_image(dst, result, overwrite=args.overwrite)
+                print(f"OK: {src} -> {dst}")
+                num_ok += 1
         except Exception as e:
             print(f"NG: {src} ({e})", file=sys.stderr)
             num_ng += 1
